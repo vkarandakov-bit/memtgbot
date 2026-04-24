@@ -1,16 +1,12 @@
 import os
 import io
 import random
-import textwrap
 import asyncio
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from PIL import Image, ImageDraw, ImageFont
-
 from dotenv import load_dotenv
 
 load_dotenv()
