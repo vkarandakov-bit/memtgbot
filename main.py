@@ -6,6 +6,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
@@ -20,6 +21,7 @@ FONT_SIZE = int(os.getenv("FONT_SIZE", "48"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+print('Бот запущен!')
 
 user_mems: dict[int, bytes] = {}
 
@@ -40,6 +42,7 @@ def add_caption_to_image(img_bytes: bytes, caption: str) -> bytes:
     try:
         font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
     except (IOError, OSError):
+        print(f"Шрифт {FONT_PATH} не найден. Использую стандартный.")
         font = ImageFont.load_default()
 
     max_width = int(img.width * 0.8)
@@ -71,7 +74,7 @@ def add_caption_to_image(img_bytes: bytes, caption: str) -> bytes:
         line_heights.append(h)
         total_text_height += h + 10
 
-        y_start = img.height - 20 - total_text_height
+    y_start = img.height - 20 - total_text_height
 
     for i, line in enumerate(lines):
         bbox = draw.textbbox((0, 0), line, font=font)
@@ -96,10 +99,14 @@ async def cmd_start(message: types.Message):
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
     user_id = message.from_user.id
+    print('ID пользователя получено')
     photo = message.photo[-1]
+    print('Фото и id пользователя получены!')
 
-    file = await bot.get_file(photo.file_id)
-    img_bytes = await bot.download_file(file.file_path)
+    file_in_memory = io.BytesIO()
+    await bot.download(photo, destination=file_in_memory)
+    img_bytes = file_in_memory.getvalue()
+    ## file = await bot.get_file(photo.file_id)
 
     os.makedirs(SAVE_DIR, exist_ok=True)
     now = datetime.now()
@@ -109,16 +116,17 @@ async def handle_photo(message: types.Message):
         f.write(img_bytes)
 
     caption = get_random_caption(CAPTIONS_FILE)
+    print(caption)
     mem_bytes = add_caption_to_image(img_bytes, caption)
 
     user_mems[user_id] = mem_bytes
-
+    ##print(user_mems[user_id])
     buttons = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Поделиться в канале", callback_data="share")],
         [InlineKeyboardButton(text="Не буду делиться", callback_data="skip")]
     ])
     await message.answer_photo(
-        photo=io.BytesIO(mem_bytes),
+        photo=BufferedInputFile(mem_bytes, "user_picture.jpg"),
         caption="Готово! Отправить в канал?",
         reply_markup=buttons
     )
@@ -132,7 +140,7 @@ async def callback_share(callback: types.CallbackQuery):
     if mem_bytes and CHANNEL_ID:
         await bot.send_photo(
             chat_id=CHANNEL_ID,
-            photo=io.BytesIO(mem_bytes),
+            photo=BufferedInputFile(mem_bytes, "share.jpg"),
             caption=f"Мем от @{callback.from_user.username or 'анонима'}"
         )
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -149,5 +157,16 @@ async def callback_skip(callback: types.CallbackQuery):
     await callback.message.answer("👍 Ок, отправляй ещё!")
 
 
+async def main():
+    # Удаляем старые сообщения, которые пришли, пока бот был выключен
+    await bot.delete_webhook(drop_pending_updates=True)
+    # Запускаем прослушивание
+    await dp.start_polling(bot)
+
+
 if __name__ == "__main__":
-    asyncio.run(dp.start_polling(bot))
+    try:
+        print('Бот запускается')
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Бот выключен")
